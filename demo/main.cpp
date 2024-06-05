@@ -189,15 +189,23 @@ void dumpObj(const Mesh& mesh, bool recomputeNormals = false)
 			nz *= s;
 		}
 
+		float tx = v.tx, ty = v.ty;
+
 		fprintf(stderr, "v %f %f %f\n", v.px, v.py, v.pz);
 		fprintf(stderr, "vn %f %f %f\n", nx, ny, nz);
+		fprintf(stderr, "vt %f %f\n", tx, ty);
 	}
 
 	for (size_t i = 0; i < mesh.indices.size(); i += 3)
 	{
 		unsigned int a = mesh.indices[i], b = mesh.indices[i + 1], c = mesh.indices[i + 2];
-
+#if 0
 		fprintf(stderr, "f %d %d %d\n", a + 1, b + 1, c + 1);
+#else
+		// [ypj] Assume the same number of vertices and text_coords and they have
+		// identical indices after optimizations are applied
+		fprintf(stderr, "f %d/%d %d/%d %d/%d\n", a + 1, a + 1, b + 1, b + 1, c + 1, c + 1);
+#endif
 	}
 }
 
@@ -1250,6 +1258,8 @@ void processDev(const char* path)
 	meshopt_optimizeVertexFetch(&copy.vertices[0], &copy.indices[0], copy.indices.size(), &copy.vertices[0], copy.vertices.size(), sizeof(Vertex));
 
 	meshlets(copy, false);
+
+	dumpObj(copy, true);
 }
 
 int main(int argc, char** argv)
