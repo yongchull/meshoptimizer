@@ -1257,9 +1257,114 @@ void processDev(const char* path)
 	meshopt_optimizeVertexCache(&copy.indices[0], &copy.indices[0], copy.indices.size(), copy.vertices.size());
 	meshopt_optimizeVertexFetch(&copy.vertices[0], &copy.indices[0], copy.indices.size(), &copy.vertices[0], copy.vertices.size(), sizeof(Vertex));
 
-	// meshlets(copy, false);
+	meshlets(copy, false);
+}
 
+void processDynamicMesh(const char* path)
+{
+	// parse input mesh file
+	//-----------------------
+	double readin_time = -timestamp();
+	
+	fastObjMesh* obj = fast_obj_read(path);
+	
+	readin_time += timestamp();
+	
+	if (!obj)
+	{
+		printf("Error loading %s: file not found\n", path);
+		printf("... skipping\n");
+		return;
+	}
+	
+	printf("%s: read in %.2f msec\n", path, readin_time * 1000);
+	
+	size_t total_indices = 0;
+
+	for (unsigned int i = 0; i < obj->face_count; ++i)
+		total_indices += 3 * (obj->face_vertices[i] - 2);
+
+	printf("number of positions: %u\n", obj->position_count - 1); // do not count a dummy element
+	printf("number of texcoords: %u\n", obj->texcoord_count - 1);
+	printf("number of normals  : %u\n", obj->normal_count - 1);
+	printf("number of faces    : %u\n", obj->face_count);
+	printf("number of indices  : %u\n", obj->index_count);
+	printf("number of indices  : %lu (after triangulation)\n", total_indices);
+	
+	// remap vertex and index buffers
+	//--------------------------------
+	double remap_time = -timestamp();
+	
+	std::vector<Vertex> vertices(total_indices);
+
+	size_t vertex_offset = 0;
+	size_t index_offset = 0;
+
+	for (unsigned int i = 0; i < obj->face_count; ++i)
+	{
+		// printf("f");
+		for (unsigned int j = 0; j < obj->face_vertices[i]; ++j)
+		{
+			fastObjIndex gi = obj->indices[index_offset + j];
+			// printf(" %u/%u/%u", gi.p, gi.t, gi.n);
+			Vertex v =
+			    {
+			        obj->positions[gi.p * 3 + 0],
+			        obj->positions[gi.p * 3 + 1],
+			        obj->positions[gi.p * 3 + 2],
+			        obj->normals[0], // wants to optimize position coords, not tex or normal coords
+			        obj->normals[1],
+			        obj->normals[2],
+			        obj->texcoords[0],
+			        obj->texcoords[1],
+			    };
+			
+			// triangulate polygon on the fly; offset-3 is always the first polygon vertex
+			if (j >= 3)
+			{
+				vertices[vertex_offset + 0] = vertices[vertex_offset - 3];
+				vertices[vertex_offset + 1] = vertices[vertex_offset - 1];
+				vertex_offset += 2;
+			}
+
+			vertices[vertex_offset] = v;
+			vertex_offset++;
+		}
+		// printf("\n");
+		index_offset += obj->face_vertices[i];
+	}
+
+	std::vector<unsigned int> remap(total_indices);
+
+	size_t total_vertices = meshopt_generateVertexRemap(&remap[0], NULL, total_indices, &vertices[0], total_indices, sizeof(Vertex));
+	
+	Mesh mesh;
+	mesh.indices.resize(total_indices);
+	meshopt_remapIndexBuffer(&mesh.indices[0], NULL, total_indices, &remap[0]);
+
+	mesh.vertices.resize(total_vertices);
+	meshopt_remapVertexBuffer(&mesh.vertices[0], &vertices[0], total_indices, sizeof(Vertex), &remap[0]);
+	
+	remap_time += timestamp();
+
+	printf("%d vertices, %d triangles; indexed in %.2f msec\n", int(mesh.vertices.size()), int(mesh.indices.size() / 3), remap_time * 1000);
+	
+	double optimize_time = -timestamp();
+
+	Mesh copy = mesh;
+	meshopt_optimizeVertexCache(&copy.indices[0], &copy.indices[0], copy.indices.size(), copy.vertices.size());
+	meshopt_optimizeVertexFetch(&copy.vertices[0], &copy.indices[0], copy.indices.size(), &copy.vertices[0], copy.vertices.size(), sizeof(Vertex));
+	
+	optimize_time += timestamp();
+	printf("vertex cache and fetch optimized in %.2f msec\n", optimize_time * 1000);
+	
+	// dump optimized mesh
+	//---------------------
 	dumpObj(copy, true);
+	
+	// clean up	
+	//---------
+	fast_obj_destroy(obj);
 }
 
 int main(int argc, char** argv)
@@ -1280,6 +1385,13 @@ int main(int argc, char** argv)
 			for (int i = 2; i < argc; ++i)
 			{
 				processDev(argv[i]);
+			}
+		}
+		else if (strcmp(argv[1], "-u") == 0)
+		{
+			for (int i = 2; i < argc; ++i)
+			{
+				processDynamicMesh(argv[i]);
 			}
 		}
 		else
