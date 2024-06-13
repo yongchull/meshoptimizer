@@ -138,7 +138,25 @@ Mesh parseObj(const char* path, double& reindex)
 	return result;
 }
 
-void dumpObj(const Mesh& mesh, bool recomputeNormals = false)
+void dumpVertices(const Mesh& mesh)
+{
+	for (size_t i = 0; i < mesh.vertices.size(); ++i)
+	{
+		const Vertex& v = mesh.vertices[i];
+		fprintf(stderr, "v %f %f %f\n", v.px, v.py, v.pz);
+	}
+}
+
+void dumpTextures(const Mesh& mesh)
+{
+	for (size_t i = 0; i < mesh.vertices.size(); ++i)
+	{
+		const Vertex& v = mesh.vertices[i];
+		fprintf(stderr, "vt %f %f\n", v.tx, v.ty);
+	}
+}
+
+void dumpNormals(const Mesh& mesh, bool recomputeNormals = false)
 {
 	std::vector<float> normals;
 
@@ -189,24 +207,27 @@ void dumpObj(const Mesh& mesh, bool recomputeNormals = false)
 			nz *= s;
 		}
 
-		float tx = v.tx, ty = v.ty;
-
-		fprintf(stderr, "v %f %f %f\n", v.px, v.py, v.pz);
 		fprintf(stderr, "vn %f %f %f\n", nx, ny, nz);
-		fprintf(stderr, "vt %f %f\n", tx, ty);
 	}
+}
 
+void dumpFaces(const Mesh& mesh)
+{
 	for (size_t i = 0; i < mesh.indices.size(); i += 3)
 	{
-		unsigned int a = mesh.indices[i], b = mesh.indices[i + 1], c = mesh.indices[i + 2];
-#if 0
-		fprintf(stderr, "f %d %d %d\n", a + 1, b + 1, c + 1);
-#else
+		unsigned int a = mesh.indices[i] + 1, b = mesh.indices[i + 1] + 1, c = mesh.indices[i + 2] + 1;
 		// [ypj] Assume the same number of vertices and text_coords and they have
 		// identical indices after optimizations are applied
-		fprintf(stderr, "f %d/%d %d/%d %d/%d\n", a + 1, a + 1, b + 1, b + 1, c + 1, c + 1);
-#endif
+		fprintf(stderr, "f %d/%d %d/%d %d/%d\n", a, a, b, b, c, c);
 	}
+}
+
+void dumpObj(const Mesh& mesh, bool recomputeNormals = false)
+{
+	dumpVertices(mesh);
+	dumpNormals(mesh, recomputeNormals);
+	dumpTextures(mesh);
+	dumpFaces(mesh);
 }
 
 bool isMeshValid(const Mesh& mesh)
@@ -1284,12 +1305,11 @@ void processDynamicMesh(const char* path)
 	for (unsigned int i = 0; i < obj->face_count; ++i)
 		total_indices += 3 * (obj->face_vertices[i] - 2);
 
-	printf("number of positions: %u\n", obj->position_count - 1); // do not count a dummy element
-	printf("number of texcoords: %u\n", obj->texcoord_count - 1);
-	printf("number of normals  : %u\n", obj->normal_count - 1);
-	printf("number of faces    : %u\n", obj->face_count);
-	printf("number of indices  : %u\n", obj->index_count);
-	printf("number of indices  : %lu (after triangulation)\n", total_indices);
+	printf("  positions: %u\n", obj->position_count - 1); // do not count a dummy element
+	printf("  texcoords: %u\n", obj->texcoord_count - 1);
+	printf("  normals  : %u\n", obj->normal_count - 1);
+	printf("  faces    : %u\n", obj->face_count);
+	printf("  indices  : %u -> %lu (after triangulation)\n", obj->index_count, total_indices);
 	
 	// remap vertex and index buffers
 	//--------------------------------
@@ -1349,6 +1369,8 @@ void processDynamicMesh(const char* path)
 
 	printf("%d vertices, %d triangles; indexed in %.2f msec\n", int(mesh.vertices.size()), int(mesh.indices.size() / 3), remap_time * 1000);
 	
+	// apply optimizations
+	//---------------------
 	double optimize_time = -timestamp();
 
 	Mesh copy = mesh;
@@ -1360,7 +1382,8 @@ void processDynamicMesh(const char* path)
 	
 	// dump optimized mesh
 	//---------------------
-	dumpObj(copy, true);
+	dumpVertices(copy);
+	dumpFaces(copy);
 	
 	// clean up	
 	//---------
